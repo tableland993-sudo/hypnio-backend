@@ -1,6 +1,13 @@
 const express = require('express');
 const router = express.Router();
+const { createClient } = require('@supabase/supabase-js');
 const { supabase } = require('../middleware/auth');
+
+// Anon key client — used for auth email flows like password reset
+const supabaseAnon = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+);
 
 /**
  * POST /auth/signup
@@ -58,7 +65,9 @@ router.post('/forgot-password', async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Email required' });
 
-  const { error } = await supabase.auth.resetPasswordForEmail(email);
+  const { error } = await supabaseAnon.auth.resetPasswordForEmail(email, {
+    redirectTo: 'https://ttajfoyjabpertbeonkp.supabase.co/auth/v1/callback',
+  });
   if (error) return res.status(400).json({ error: error.message });
 
   // Always return success — don't reveal if email exists
