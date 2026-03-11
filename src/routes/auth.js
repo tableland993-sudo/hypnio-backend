@@ -20,7 +20,7 @@ router.post('/signup', async (req, res) => {
     return res.status(400).json({ error: 'All fields required' });
   }
 
-  // Create auth user
+  // Create auth user via admin API
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email,
     password,
@@ -29,10 +29,26 @@ router.post('/signup', async (req, res) => {
 
   if (authError) return res.status(400).json({ error: authError.message });
 
+  // Sign in as the new user to get a session token
+  // This lets us insert the profile as the actual user, satisfying RLS
+  const { data: loginData, error: loginError } = await supabaseAnon.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (loginError) return res.status(500).json({ error: loginError.message });
+
+  // Create a client scoped to this user's session
+  const userClient = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_ANON_KEY,
+    { global: { headers: { Authorization: `Bearer ${loginData.session.access_token}` } } }
+  );
+
   // Create profile with quiz answers + start 3-day trial
   const trialEndsAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
 
-  const { error: profileError } = await supabase.from('profiles').insert({
+  const { error: profileError } = await userClient.from('profiles').insert({
     id: authData.user.id,
     email,
     sleep_blocker,
@@ -44,7 +60,8 @@ router.post('/signup', async (req, res) => {
 
   if (profileError) return res.status(500).json({ error: profileError.message });
 
-  res.json({ user: authData.user, trial_ends_at: trialEndsAt });
+  // Return the session so the app can log the user in immediately
+  res.json({ user: authData.user, session: loginData.session, trial_ends_at: trialEndsAt });
 });
 
 /**
@@ -52,7 +69,7 @@ router.post('/signup', async (req, res) => {
  */
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabaseAnon.auth.signInWithPassword({ email, password });
   if (error) return res.status(401).json({ error: error.message });
   res.json(data);
 });
@@ -76,20 +93,22 @@ router.post('/forgot-password', async (req, res) => {
 
 /**
  * GET /auth/profile
- * Returns current user's profile + subscription status
+ * Returns current user's profile
  */
 router.get('/profile', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token' });
 
-  const { data: { user } } = await supabase.auth.getUser(token);
-  if (!user) return res.status(401).json({ error: 'Invalid token' });
+  const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+  if (userError || !user) return res.status(401).json({ error: 'Invalid token' });
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', user.id)
     .single();
+
+  if (profileError || !profile) return res.status(404).json({ error: 'Profile not found' });
 
   res.json(profile);
 });
