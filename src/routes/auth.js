@@ -51,6 +51,21 @@ router.post('/login', async (req, res) => {
 });
 
 /**
+ * POST /auth/forgot-password
+ * Sends a password reset email via Supabase
+ */
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email required' });
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email);
+  if (error) return res.status(400).json({ error: error.message });
+
+  // Always return success — don't reveal if email exists
+  res.json({ message: 'If an account exists, a reset link has been sent.' });
+});
+
+/**
  * GET /auth/profile
  * Returns current user's profile + subscription status
  */
