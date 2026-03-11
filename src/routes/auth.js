@@ -66,7 +66,7 @@ router.post('/forgot-password', async (req, res) => {
   if (!email) return res.status(400).json({ error: 'Email required' });
 
   const { error } = await supabaseAnon.auth.resetPasswordForEmail(email, {
-    redirectTo: 'https://ttajfoyjabpertbeonkp.supabase.co/auth/v1/callback',
+    redirectTo: 'hypnio://reset-password',
   });
   if (error) return res.status(400).json({ error: error.message });
 
